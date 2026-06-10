@@ -19,7 +19,7 @@ Description: Exact analytic performance measures for the Erlang-A (M/M/n+M)
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
-Depends: R (>= 4.1)
+Depends: R (>= 4.0)
 Imports: stats, graphics, grDevices, utils
 Suggests: testthat (>= 3.0.0), knitr
 Config/testthat/edition: 3
