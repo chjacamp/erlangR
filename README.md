@@ -207,7 +207,7 @@ analysing staffing experiments.
 
 ```r
 # install.packages("remotes")
-remotes::install_github("/erlangR")
+remotes::install_github("chjacamp/erlangR")
 ```
 
 ## Development notes
