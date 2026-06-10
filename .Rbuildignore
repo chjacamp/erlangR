@@ -4,3 +4,5 @@
 ^\.Rproj\.user$
 ^README\.Rmd$
 ^\.github$
+^\.positai$
+^\.claude$

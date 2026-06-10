@@ -3,9 +3,8 @@ Type: Package
 Title: Erlang-A Queueing Models for Staffing Decisions
 Version: 0.1.0
 Authors@R: c(
-    person("Package", "Owner", email = "owner@example.com",
-           role = c("aut", "cre"),
-           comment = "Placeholder -- replace with your name and email"),
+    person("Christopher", "Campbell", email = "chjacamp@gmail.com",
+           role = c("aut", "cre")),
     person("Claude", "(Anthropic)", role = "ctb",
            comment = "Initial implementation"))
 Description: Exact analytic performance measures for the Erlang-A (M/M/n+M)

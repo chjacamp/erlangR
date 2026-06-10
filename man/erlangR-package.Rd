@@ -9,7 +9,7 @@
 Exact analytic performance measures for the Erlang-A (M/M/n+M) queue: Poisson arrivals, exponential service times, n parallel agents, and exponentially distributed caller patience. The central quantity is P(abandon | number of agents), intended to drive staffing decisions through expected-loss analysis rather than service-level targets. Provides maximum-likelihood fitting from interval-aggregated contact centre data in the familiar fit/predict/plot workflow, Erlang B and Erlang C as limiting cases, an event-based simulator for validation and experiment design, and a worked half-hour example dataset.
 }
 \author{
-\strong{Maintainer}: Package Owner \email{owner@example.com} (Placeholder -- replace with your name and email)
+\strong{Maintainer}: Christopher Campbell \email{chjacamp@gmail.com}
 
 Other contributors:
 \itemize{
