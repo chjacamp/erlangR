@@ -120,15 +120,13 @@ df <- data.frame(t = callcenter$tod, day = callcenter$dow,
 erlang_fit(df, rate = ~ day + t, arrivals = offered, abandoned = lost,
            agents = staffed, aht = handle)
 
-# spline arrival-rate model with base splines (no extra dependency)
-cc <- callcenter
-cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
-  as.integer(substr(cc$tod, 4, 5))
-erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))
+# spline arrival-rate models over numeric time of day (`minute`):
+# base splines need no extra dependency
+erlang_fit(callcenter, rate = ~ dow + splines::ns(minute, 8))
 
 # mgcv smooth, if installed (it almost always is)
 if (requireNamespace("mgcv", quietly = TRUE)) {
-  erlang_fit(cc, rate = ~ dow + s(minute, k = 10))
+  erlang_fit(callcenter, rate = ~ dow + s(minute, k = 10))
 }
 }
 \seealso{

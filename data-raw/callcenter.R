@@ -14,7 +14,8 @@ mu    <- 1 / aht_true
 theta <- 1 / patience_true
 base_per_hour <- 150
 
-tod_labels <- sprintf("%02d:%02d", rep(8:17, each = 2), c(0, 30))
+tod_labels  <- sprintf("%02d:%02d", rep(8:17, each = 2), c(0, 30))
+tod_minutes <- rep(8:17, each = 2) * 60L + c(0L, 30L)
 tod_curve  <- c(0.45, 0.60, 0.78, 0.92, 1.00, 0.98, 0.90, 0.80, 0.72, 0.70,
                 0.74, 0.80, 0.85, 0.83, 0.78, 0.70, 0.60, 0.50, 0.42, 0.35)
 dow_names <- c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
@@ -46,6 +47,7 @@ for (d in 0:27) {
       ts        = as.POSIXct(paste(date, tod_labels[t]), tz = "UTC"),
       date      = date,
       tod       = tod_labels[t],
+      minute    = tod_minutes[t],
       dow       = wd,
       week      = week,
       arm       = arm,

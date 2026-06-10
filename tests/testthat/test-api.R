@@ -57,10 +57,7 @@ test_that("a numeric rate vector (bring-your-own forecast) is used as-is", {
 })
 
 test_that("base splines work in a plain GLM rate formula", {
-  cc <- callcenter
-  cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
-    as.integer(substr(cc$tod, 4, 5))
-  fit <- erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))
+  fit <- erlang_fit(callcenter, rate = ~ dow + splines::ns(minute, 8))
   expect_s3_class(fit$rate_model, "glm")
   # generating patience is 100 s; the smooth rate model should land close
   expect_lt(abs(log((1 / fit$theta) / 100)), 0.25)
@@ -70,13 +67,19 @@ test_that("base splines work in a plain GLM rate formula", {
 
 test_that("mgcv smooth terms route to gam when mgcv is available", {
   skip_if_not_installed("mgcv")
-  cc <- callcenter
-  cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
-    as.integer(substr(cc$tod, 4, 5))
-  fit <- erlang_fit(cc, rate = ~ dow + s(minute, k = 10))
+  fit <- erlang_fit(callcenter, rate = ~ dow + s(minute, k = 10))
   expect_s3_class(fit$rate_model, "gam")
   expect_lt(abs(log((1 / fit$theta) / 100)), 0.25)
   expect_output(print(fit), "Poisson GAM")
+})
+
+test_that("non-numeric smooth covariates produce an instructive error", {
+  skip_if_not_installed("mgcv")
+  # tod is character "HH:MM"; mgcv's own failure here is cryptic, ours is not
+  expect_error(erlang_fit(callcenter, rate = ~ dow + s(tod, k = 2)),
+               "smooths need numeric input")
+  expect_error(erlang_fit(callcenter, rate = ~ s(arm)),
+               "smooths need numeric input")
 })
 
 test_that("a smooth-looking variable name does not trigger the gam route", {

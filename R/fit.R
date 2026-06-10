@@ -99,15 +99,13 @@
 #' erlang_fit(df, rate = ~ day + t, arrivals = offered, abandoned = lost,
 #'            agents = staffed, aht = handle)
 #'
-#' # spline arrival-rate model with base splines (no extra dependency)
-#' cc <- callcenter
-#' cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
-#'   as.integer(substr(cc$tod, 4, 5))
-#' erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))
+#' # spline arrival-rate models over numeric time of day (`minute`):
+#' # base splines need no extra dependency
+#' erlang_fit(callcenter, rate = ~ dow + splines::ns(minute, 8))
 #'
 #' # mgcv smooth, if installed (it almost always is)
 #' if (requireNamespace("mgcv", quietly = TRUE)) {
-#'   erlang_fit(cc, rate = ~ dow + s(minute, k = 10))
+#'   erlang_fit(callcenter, rate = ~ dow + s(minute, k = 10))
 #' }
 #' @export
 erlang_fit <- function(data, rate = "interval", period = 1800,
@@ -167,9 +165,43 @@ erlang_fit <- function(data, rate = "interval", period = 1800,
         stop("`rate` uses mgcv smooth terms (", paste(smooths, collapse = ", "),
              ") but mgcv is not installed; install it or use splines::ns()/bs() ",
              "inside a plain formula")
-      rate_model <- mgcv::gam(f, data = glm_data, family = stats::poisson())
+      # smooth covariates (positional args of s/te/ti/t2) must be numeric;
+      # catch this here because mgcv's own failure is cryptic
+      smooth_vars <- character(0)
+      walk <- function(e) {
+        if (is.call(e)) {
+          if (as.character(e[[1]])[1] %in% c("s", "te", "ti", "t2")) {
+            args <- as.list(e)[-1]
+            nm <- names(args); if (is.null(nm)) nm <- rep("", length(args))
+            smooth_vars <<- c(smooth_vars,
+                              unlist(lapply(args[nm == ""], all.vars)))
+          } else {
+            lapply(as.list(e), walk)
+          }
+        }
+      }
+      walk(f[[3]])
+      for (v in unique(smooth_vars)) {
+        val <- if (v %in% names(glm_data)) glm_data[[v]]
+               else tryCatch(eval(as.name(v), caller), error = function(e) NULL)
+        if (!is.null(val) && !is.numeric(val))
+          stop("smooth covariate `", v, "` is ", class(val)[1],
+               ", but mgcv smooths need numeric input.\n",
+               "  Convert it first -- e.g. for \"HH:MM\" times: ",
+               "data$minute <- as.integer(substr(", v, ", 1, 2)) * 60 + ",
+               "as.integer(substr(", v, ", 4, 5)),\n",
+               "  then rate = ~ ... + s(minute). (The callcenter dataset ",
+               "ships this as the `minute` column.)", call. = FALSE)
+      }
+      rate_model <- tryCatch(
+        mgcv::gam(f, data = glm_data, family = stats::poisson()),
+        error = function(e) stop("the arrival-rate model (mgcv::gam) failed ",
+                                 "to fit: ", conditionMessage(e), call. = FALSE))
     } else {
-      rate_model <- stats::glm(f, data = glm_data, family = stats::poisson())
+      rate_model <- tryCatch(
+        stats::glm(f, data = glm_data, family = stats::poisson()),
+        error = function(e) stop("the arrival-rate model (Poisson glm) failed ",
+                                 "to fit: ", conditionMessage(e), call. = FALSE))
     }
     lambda <- unname(stats::fitted(rate_model)) / period
   } else {

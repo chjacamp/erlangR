@@ -77,12 +77,12 @@ with staffing alternating week by week between a lean and a rich rule -- the
 head(callcenter)
 ```
 
-Fit the model. The arrival rate is *modelled* (Poisson GLM, multiplicative
-day-of-week and time-of-day effects) instead of plugging each interval's own
-noisy count back in:
+Fit the model. The arrival rate is *modelled* (Poisson GAM: day-of-week
+effects plus a smooth over numeric time of day) instead of plugging each
+interval's own noisy count back in:
 
 ```{r fit}
-fit <- erlang_fit(callcenter, rate = ~ dow + tod)
+fit <- erlang_fit(callcenter, rate = ~ dow + s(minute, k = 10))
 fit
 ```
 
@@ -99,10 +99,14 @@ prefer:
 
 ``` r
 erlang_fit(df, arrivals = offered, abandoned = lost, agents = staffed, aht = handle)
-erlang_fit(cc, rate = ~ dow + splines::ns(minute_of_day, 8))   # base splines via glm
-erlang_fit(cc, rate = ~ dow + s(minute_of_day, k = 10))        # mgcv::gam, if installed
-erlang_fit(cc, rate = my_spline_forecast)                      # used as-is, not refitted
+erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))   # base splines via glm
+erlang_fit(cc, rate = ~ dow + s(minute, k = 10))        # mgcv::gam, if installed
+erlang_fit(cc, rate = my_spline_forecast)               # used as-is, not refitted
 ```
+
+Smooth covariates must be numeric -- `minute` (minutes since midnight) is in
+the dataset for exactly this; `s(tod)` on the `"HH:MM"` character column gets
+a plain-English error instead of mgcv's.
 
 ```{r calibration}
 plot(fit, type = "calibration")

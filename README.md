@@ -78,36 +78,36 @@ with staffing alternating week by week between a lean and a rich rule -- the
 
 ``` r
 head(callcenter)
-#>                    ts       date   tod dow week  arm agents arrivals abandoned
-#> 1 2026-05-04 08:00:00 2026-05-04 08:00 Mon    1 lean      8       27         0
-#> 2 2026-05-04 08:30:00 2026-05-04 08:30 Mon    1 lean     10       49        11
-#> 3 2026-05-04 09:00:00 2026-05-04 09:00 Mon    1 lean     12       65         9
-#> 4 2026-05-04 09:30:00 2026-05-04 09:30 Mon    1 lean     14       77         3
-#> 5 2026-05-04 10:00:00 2026-05-04 10:00 Mon    1 lean     15      100        12
-#> 6 2026-05-04 10:30:00 2026-05-04 10:30 Mon    1 lean     15       83         4
-#>   handled   aht
-#> 1      27 280.6
-#> 2      38 273.7
-#> 3      56 290.7
-#> 4      74 288.6
-#> 5      88 325.8
-#> 6      79 307.2
+#>                    ts       date   tod minute dow week  arm agents arrivals
+#> 1 2026-05-04 08:00:00 2026-05-04 08:00    480 Mon    1 lean      8       27
+#> 2 2026-05-04 08:30:00 2026-05-04 08:30    510 Mon    1 lean     10       49
+#> 3 2026-05-04 09:00:00 2026-05-04 09:00    540 Mon    1 lean     12       65
+#> 4 2026-05-04 09:30:00 2026-05-04 09:30    570 Mon    1 lean     14       77
+#> 5 2026-05-04 10:00:00 2026-05-04 10:00    600 Mon    1 lean     15      100
+#> 6 2026-05-04 10:30:00 2026-05-04 10:30    630 Mon    1 lean     15       83
+#>   abandoned handled   aht
+#> 1         0      27 280.6
+#> 2        11      38 273.7
+#> 3         9      56 290.7
+#> 4         3      74 288.6
+#> 5        12      88 325.8
+#> 6         4      79 307.2
 ```
 
-Fit the model. The arrival rate is *modelled* (Poisson GLM, multiplicative
-day-of-week and time-of-day effects) instead of plugging each interval's own
-noisy count back in:
+Fit the model. The arrival rate is *modelled* (Poisson GAM: day-of-week
+effects plus a smooth over numeric time of day) instead of plugging each
+interval's own noisy count back in:
 
 
 ``` r
-fit <- erlang_fit(callcenter, rate = ~ dow + tod)
+fit <- erlang_fit(callcenter, rate = ~ dow + s(minute, k = 10))
 fit
 #> Erlang-A model fit (M/M/n+M), interval maximum likelihood
 #>   intervals      : 560 informative (period 1800 s)
-#>   arrival rate   : 93.4 calls/hour on average [Poisson GLM: ~dow + tod]
+#>   arrival rate   : 93.4 calls/hour on average [Poisson GAM: ~dow + s(minute, k = 10)]
 #>   mean handle    : 282.0 s   (mu = 0.00355 /s, exponential MLE)
-#>   mean patience  : 106.3 s   (95% CI 89.7-126.0)   <- the fitted parameter
-#>   log-likelihood : -1139.9 (binomial, df = 1)
+#>   mean patience  : 104.7 s   (95% CI 88.3-124.3)   <- the fitted parameter
+#>   log-likelihood : -1143.6 (binomial, df = 1)
 ```
 
 The generating patience (100 s) is recovered inside the interval. The same
@@ -123,10 +123,14 @@ prefer:
 
 ``` r
 erlang_fit(df, arrivals = offered, abandoned = lost, agents = staffed, aht = handle)
-erlang_fit(cc, rate = ~ dow + splines::ns(minute_of_day, 8))   # base splines via glm
-erlang_fit(cc, rate = ~ dow + s(minute_of_day, k = 10))        # mgcv::gam, if installed
-erlang_fit(cc, rate = my_spline_forecast)                      # used as-is, not refitted
+erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))   # base splines via glm
+erlang_fit(cc, rate = ~ dow + s(minute, k = 10))        # mgcv::gam, if installed
+erlang_fit(cc, rate = my_spline_forecast)               # used as-is, not refitted
 ```
+
+Smooth covariates must be numeric -- `minute` (minutes since midnight) is in
+the dataset for exactly this; `s(tod)` on the `"HH:MM"` character column gets
+a plain-English error instead of mgcv's.
 
 
 ``` r
@@ -170,10 +174,10 @@ loss
 #>   cost-minimising staffing: n = 20 agents
 #> 
 #>  n_agents p_abandon lost_per_hour staff_per_hour total_per_hour
-#>        17     3.71%           189            442            631
-#>        18     2.40%           122            468            590
-#>        19     1.49%            76            494            570
-#>        20     0.89%            45            520            565
+#>        17     3.73%           190            442            632
+#>        18     2.41%           123            468            591
+#>        19     1.50%            76            494            570
+#>        20     0.89%            46            520            566
 #>        21     0.51%            26            546            572
 #>        22     0.28%            14            572            586
 #>        23     0.15%             8            598            606

@@ -18,7 +18,10 @@
 #' \describe{
 #'   \item{ts}{interval start time (`POSIXct`, UTC).}
 #'   \item{date}{calendar date.}
-#'   \item{tod}{interval start, `"HH:MM"`.}
+#'   \item{tod}{interval start, `"HH:MM"` (character; for display).}
+#'   \item{minute}{interval start as minutes since midnight (480--1530) --
+#'     the numeric time-of-day to use in spline or smooth rate models,
+#'     e.g. `rate = ~ dow + s(minute)`.}
 #'   \item{dow}{day of week, `Mon`--`Sun`.}
 #'   \item{week}{study week, 1--4.}
 #'   \item{arm}{staffing arm, `lean` (weeks 1 and 3) or `rich` (2 and 4).}

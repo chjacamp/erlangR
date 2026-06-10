@@ -9,7 +9,10 @@ A data frame with 560 rows (28 days x 20 intervals):
 \describe{
 \item{ts}{interval start time (\code{POSIXct}, UTC).}
 \item{date}{calendar date.}
-\item{tod}{interval start, \code{"HH:MM"}.}
+\item{tod}{interval start, \code{"HH:MM"} (character; for display).}
+\item{minute}{interval start as minutes since midnight (480--1530) --
+the numeric time-of-day to use in spline or smooth rate models,
+e.g. \code{rate = ~ dow + s(minute)}.}
 \item{dow}{day of week, \code{Mon}--\code{Sun}.}
 \item{week}{study week, 1--4.}
 \item{arm}{staffing arm, \code{lean} (weeks 1 and 3) or \code{rich} (2 and 4).}
