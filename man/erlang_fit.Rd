@@ -4,28 +4,44 @@
 \alias{erlang_fit}
 \title{Fit an Erlang-A model to interval-aggregated data}
 \usage{
-erlang_fit(data, period = 1800, rate = "interval")
+erlang_fit(
+  data,
+  rate = "interval",
+  period = 1800,
+  arrivals = arrivals,
+  abandoned = abandoned,
+  agents = agents,
+  aht = aht
+)
 }
 \arguments{
-\item{data}{A data frame with one row per interval and columns
-\code{arrivals} (count), \code{abandoned} (count), \code{agents} (on duty), and \code{aht}
-(mean handle time of completed calls, seconds; \code{NA} allowed when
-nothing completed). Any columns referenced in \code{rate} must be present
-too. Extra columns (e.g. timestamps) are kept and used by the plot
-method. See \link{callcenter} for the expected shape.}
+\item{data}{A data frame with one row per interval. Columns can have any
+names: map them with the \code{arrivals}, \code{abandoned}, \code{agents}, and \code{aht}
+arguments. Extra columns (e.g. timestamps) are kept and used by the
+plot method when present. See \link{callcenter} for the expected shape.}
+
+\item{rate}{Arrival-rate model: a one-sided formula (Poisson GLM;
+\code{mgcv} smooths are routed to \code{\link[mgcv:gam]{mgcv::gam()}}; recommended), a numeric
+vector of expected arrivals per interval (a forecast from your own
+model, used as-is), or the string \code{"interval"} for the saturated
+per-interval plug-in. See the section below.}
 
 \item{period}{Interval length in seconds (default \code{1800}). All fitted
 rates are per second.}
 
-\item{rate}{Arrival-rate model: a one-sided formula for a Poisson GLM
-(recommended; e.g. \code{~ dow + tod}, or \code{~ 1} for a constant rate), or
-the string \code{"interval"} for the saturated per-interval plug-in. See
-the section below.}
+\item{arrivals, abandoned, agents, aht}{Where to find each model input in
+\code{data}: a bare column name, a string, or an expression evaluated in
+\code{data} (e.g. \code{abandoned = offered - handled}), in the spirit of
+\code{lm(weights = ...)}. Defaults assume columns named as in \link{callcenter}:
+\code{arrivals} (count), \code{abandoned} (count), \code{agents} (on duty), \code{aht}
+(mean handle time of completed calls, seconds; \code{NA} allowed when
+nothing completed).}
 }
 \value{
 An object of class \code{"erlang_fit"}: a list with elements \code{theta},
-\code{mu}, \code{se_log_theta}, \code{logLik}, \code{nobs}, \code{rate}, \code{rate_model} (the GLM,
-when a formula was used), \code{data} (the input augmented with the rate
+\code{mu}, \code{se_log_theta}, \code{logLik}, \code{nobs}, \code{rate}, \code{rate_model} (the
+glm/gam, when a formula was used), \code{data} (the input with canonical
+columns \code{arrivals}, \code{abandoned}, \code{agents}, \code{aht} plus the rate
 \code{lambda} and fitted \code{p_hat}), \code{period}, and \code{call}.
 }
 \description{
@@ -64,13 +80,25 @@ roughly +60\%. It is kept as an option (and a cautionary tale), not as a
 recommendation.
 
 Passing a one-sided formula instead -- e.g. \code{rate = ~ dow + tod} --
-fits a Poisson log-linear model for arrivals
-(\code{glm(arrivals ~ rhs, family = poisson, offset = log(period))}) and uses
-its fitted rates. Pooling information across intervals shrinks the rate
-noise and removes the bias; on \link{callcenter} it recovers the generating
-patience to within a few percent. \code{rate = ~ 1} pools everything (one
-constant rate). This is the usual statistical move: model the nuisance
-process rather than condition on its noisy realisation.
+fits a Poisson log-linear model for the arrival counts (with
+\code{offset(log(period))}) and uses its fitted rates. Pooling information
+across intervals shrinks the rate noise and removes the bias; on
+\link{callcenter} it recovers the generating patience to within a few
+percent. \code{rate = ~ 1} pools everything (one constant rate). This is the
+usual statistical move: model the nuisance process rather than condition
+on its noisy realisation.
+
+Formulas are not limited to factors. Regression splines from the base
+\code{splines} package work in a plain Poisson GLM, e.g.
+\code{rate = ~ dow + splines::ns(minute_of_day, 8)}. If the formula contains
+\code{mgcv} smooth terms -- \code{s()}, \code{te()}, \code{ti()}, \code{t2()} -- it is fitted
+with \code{mgcv::gam(family = poisson)} instead (mgcv is a Recommended
+package, so it is present on almost every R installation).
+
+Finally, \code{rate} may be a numeric vector of \emph{expected arrivals per
+interval} (same units as \code{arrivals}, one value per row): bring your own
+forecast from any model -- a GP, \code{prophet}, a judgmental forecast -- and
+it is used as-is rather than refitted.
 
 The reported standard error and confidence interval for patience come
 from the curvature of the profile log-likelihood at the optimum and
@@ -84,6 +112,24 @@ caveats -- and the standard operating assumptions in the literature.
 fit <- erlang_fit(callcenter, rate = ~ dow + tod)
 fit
 confint(fit)
+
+# columns under different names, mapped explicitly
+df <- data.frame(t = callcenter$tod, day = callcenter$dow,
+                 offered = callcenter$arrivals, lost = callcenter$abandoned,
+                 staffed = callcenter$agents, handle = callcenter$aht)
+erlang_fit(df, rate = ~ day + t, arrivals = offered, abandoned = lost,
+           agents = staffed, aht = handle)
+
+# spline arrival-rate model with base splines (no extra dependency)
+cc <- callcenter
+cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
+  as.integer(substr(cc$tod, 4, 5))
+erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))
+
+# mgcv smooth, if installed (it almost always is)
+if (requireNamespace("mgcv", quietly = TRUE)) {
+  erlang_fit(cc, rate = ~ dow + s(minute, k = 10))
+}
 }
 \seealso{
 \code{\link[=predict.erlang_fit]{predict.erlang_fit()}}, \code{\link[=plot.erlang_fit]{plot.erlang_fit()}}, \code{\link[=expected_loss]{expected_loss()}}

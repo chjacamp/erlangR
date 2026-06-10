@@ -92,6 +92,18 @@ returns a patience of ~165 s: noisy rate plug-ins meet a convex
 `p_abandon(lambda)` and bias the estimate -- the reason the rate model is a
 formula. See `?erlang_fit` for the mechanics.
 
+Your columns don't need these names, and the rate model isn't limited to
+factors -- map roles explicitly (bare names, strings, or expressions), use
+spline terms, or bring expected arrivals from any forecasting model you
+prefer:
+
+``` r
+erlang_fit(df, arrivals = offered, abandoned = lost, agents = staffed, aht = handle)
+erlang_fit(cc, rate = ~ dow + splines::ns(minute_of_day, 8))   # base splines via glm
+erlang_fit(cc, rate = ~ dow + s(minute_of_day, k = 10))        # mgcv::gam, if installed
+erlang_fit(cc, rate = my_spline_forecast)                      # used as-is, not refitted
+```
+
 ```{r calibration}
 plot(fit, type = "calibration")
 ```

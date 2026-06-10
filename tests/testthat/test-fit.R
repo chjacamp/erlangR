@@ -100,7 +100,7 @@ test_that("expected_loss() finds an interior optimum and adds up", {
 })
 
 test_that("erlang_fit validates its input", {
-  expect_error(erlang_fit(data.frame(arrivals = 1)), "missing column")
+  expect_error(erlang_fit(data.frame(arrivals = 1)), "could not resolve")
   bad <- data.frame(arrivals = 1, abandoned = 2, agents = 1, aht = 100)
   expect_error(erlang_fit(bad), "cannot exceed")
   ok <- data.frame(arrivals = 10, abandoned = 1, agents = 2, aht = 100)

@@ -34,13 +34,25 @@
 #' recommendation.
 #'
 #' Passing a one-sided formula instead -- e.g. `rate = ~ dow + tod` --
-#' fits a Poisson log-linear model for arrivals
-#' (`glm(arrivals ~ rhs, family = poisson, offset = log(period))`) and uses
-#' its fitted rates. Pooling information across intervals shrinks the rate
-#' noise and removes the bias; on [callcenter] it recovers the generating
-#' patience to within a few percent. `rate = ~ 1` pools everything (one
-#' constant rate). This is the usual statistical move: model the nuisance
-#' process rather than condition on its noisy realisation.
+#' fits a Poisson log-linear model for the arrival counts (with
+#' `offset(log(period))`) and uses its fitted rates. Pooling information
+#' across intervals shrinks the rate noise and removes the bias; on
+#' [callcenter] it recovers the generating patience to within a few
+#' percent. `rate = ~ 1` pools everything (one constant rate). This is the
+#' usual statistical move: model the nuisance process rather than condition
+#' on its noisy realisation.
+#'
+#' Formulas are not limited to factors. Regression splines from the base
+#' `splines` package work in a plain Poisson GLM, e.g.
+#' `rate = ~ dow + splines::ns(minute_of_day, 8)`. If the formula contains
+#' `mgcv` smooth terms -- `s()`, `te()`, `ti()`, `t2()` -- it is fitted
+#' with `mgcv::gam(family = poisson)` instead (mgcv is a Recommended
+#' package, so it is present on almost every R installation).
+#'
+#' Finally, `rate` may be a numeric vector of *expected arrivals per
+#' interval* (same units as `arrivals`, one value per row): bring your own
+#' forecast from any model -- a GP, `prophet`, a judgmental forecast -- and
+#' it is used as-is rather than refitted.
 #'
 #' The reported standard error and confidence interval for patience come
 #' from the curvature of the profile log-likelihood at the optimum and
@@ -49,22 +61,29 @@
 #' approximation; intervals are taken as independent. These are the honest
 #' caveats -- and the standard operating assumptions in the literature.
 #'
-#' @param data A data frame with one row per interval and columns
-#'   `arrivals` (count), `abandoned` (count), `agents` (on duty), and `aht`
-#'   (mean handle time of completed calls, seconds; `NA` allowed when
-#'   nothing completed). Any columns referenced in `rate` must be present
-#'   too. Extra columns (e.g. timestamps) are kept and used by the plot
-#'   method. See [callcenter] for the expected shape.
+#' @param data A data frame with one row per interval. Columns can have any
+#'   names: map them with the `arrivals`, `abandoned`, `agents`, and `aht`
+#'   arguments. Extra columns (e.g. timestamps) are kept and used by the
+#'   plot method when present. See [callcenter] for the expected shape.
+#' @param rate Arrival-rate model: a one-sided formula (Poisson GLM;
+#'   `mgcv` smooths are routed to [mgcv::gam()]; recommended), a numeric
+#'   vector of expected arrivals per interval (a forecast from your own
+#'   model, used as-is), or the string `"interval"` for the saturated
+#'   per-interval plug-in. See the section below.
 #' @param period Interval length in seconds (default `1800`). All fitted
 #'   rates are per second.
-#' @param rate Arrival-rate model: a one-sided formula for a Poisson GLM
-#'   (recommended; e.g. `~ dow + tod`, or `~ 1` for a constant rate), or
-#'   the string `"interval"` for the saturated per-interval plug-in. See
-#'   the section below.
+#' @param arrivals,abandoned,agents,aht Where to find each model input in
+#'   `data`: a bare column name, a string, or an expression evaluated in
+#'   `data` (e.g. `abandoned = offered - handled`), in the spirit of
+#'   `lm(weights = ...)`. Defaults assume columns named as in [callcenter]:
+#'   `arrivals` (count), `abandoned` (count), `agents` (on duty), `aht`
+#'   (mean handle time of completed calls, seconds; `NA` allowed when
+#'   nothing completed).
 #'
 #' @return An object of class `"erlang_fit"`: a list with elements `theta`,
-#'   `mu`, `se_log_theta`, `logLik`, `nobs`, `rate`, `rate_model` (the GLM,
-#'   when a formula was used), `data` (the input augmented with the rate
+#'   `mu`, `se_log_theta`, `logLik`, `nobs`, `rate`, `rate_model` (the
+#'   glm/gam, when a formula was used), `data` (the input with canonical
+#'   columns `arrivals`, `abandoned`, `agents`, `aht` plus the rate
 #'   `lambda` and fitted `p_hat`), `period`, and `call`.
 #'
 #' @seealso [predict.erlang_fit()], [plot.erlang_fit()], [expected_loss()]
@@ -72,13 +91,53 @@
 #' fit <- erlang_fit(callcenter, rate = ~ dow + tod)
 #' fit
 #' confint(fit)
+#'
+#' # columns under different names, mapped explicitly
+#' df <- data.frame(t = callcenter$tod, day = callcenter$dow,
+#'                  offered = callcenter$arrivals, lost = callcenter$abandoned,
+#'                  staffed = callcenter$agents, handle = callcenter$aht)
+#' erlang_fit(df, rate = ~ day + t, arrivals = offered, abandoned = lost,
+#'            agents = staffed, aht = handle)
+#'
+#' # spline arrival-rate model with base splines (no extra dependency)
+#' cc <- callcenter
+#' cc$minute <- as.integer(substr(cc$tod, 1, 2)) * 60 +
+#'   as.integer(substr(cc$tod, 4, 5))
+#' erlang_fit(cc, rate = ~ dow + splines::ns(minute, 8))
+#'
+#' # mgcv smooth, if installed (it almost always is)
+#' if (requireNamespace("mgcv", quietly = TRUE)) {
+#'   erlang_fit(cc, rate = ~ dow + s(minute, k = 10))
+#' }
 #' @export
-erlang_fit <- function(data, period = 1800, rate = "interval") {
-  needed <- c("arrivals", "abandoned", "agents", "aht")
-  missing_cols <- setdiff(needed, names(data))
-  if (length(missing_cols))
-    stop("`data` is missing column(s): ", paste(missing_cols, collapse = ", "))
-  arr <- data$arrivals; ab <- data$abandoned; ag <- data$agents; aht <- data$aht
+erlang_fit <- function(data, rate = "interval", period = 1800,
+                       arrivals = arrivals, abandoned = abandoned,
+                       agents = agents, aht = aht) {
+  if (!is.data.frame(data)) stop("`data` must be a data frame")
+  caller <- parent.frame()
+  resolve <- function(expr, label) {
+    v <- tryCatch({
+      if (is.character(expr) && length(expr) == 1) {
+        if (!expr %in% names(data))
+          stop("no column named \"", expr, "\"", call. = FALSE)
+        data[[expr]]
+      } else {
+        eval(expr, data, caller)
+      }
+    }, error = function(e) {
+      stop("could not resolve `", label, " = ", deparse(expr), "`: ",
+           conditionMessage(e), "\n  Map it to your data, e.g. erlang_fit(data, ",
+           label, " = <column>).", call. = FALSE)
+    })
+    if (!is.numeric(v)) stop("`", label, "` must be numeric", call. = FALSE)
+    if (length(v) != nrow(data))
+      stop("`", label, "` must have one value per row of `data`", call. = FALSE)
+    v
+  }
+  arr <- resolve(substitute(arrivals),  "arrivals")
+  ab  <- resolve(substitute(abandoned), "abandoned")
+  ag  <- resolve(substitute(agents),    "agents")
+  aht <- resolve(substitute(aht),       "aht")
   if (any(ab > arr)) stop("`abandoned` cannot exceed `arrivals`")
   if (any(arr < 0) || any(ag < 0)) stop("counts and agents must be non-negative")
 
@@ -90,15 +149,34 @@ erlang_fit <- function(data, period = 1800, rate = "interval") {
   rate_model <- NULL
   if (identical(rate, "interval")) {
     lambda <- arr / period
+  } else if (is.numeric(rate)) {
+    if (length(rate) != nrow(data))
+      stop("a numeric `rate` must give expected arrivals per interval, one per row")
+    if (any(!is.finite(rate)) || any(rate < 0))
+      stop("expected arrivals must be finite and non-negative")
+    lambda <- rate / period
   } else if (inherits(rate, "formula")) {
     glm_data <- data
+    glm_data$.arrivals <- arr
     glm_data$.log_period <- log(period)
-    f <- stats::update(rate, arrivals ~ . + offset(.log_period))
-    rate_model <- stats::glm(f, data = glm_data, family = stats::poisson())
+    f <- stats::update(rate, .arrivals ~ . + offset(.log_period))
+    fns <- setdiff(all.names(f), all.vars(f))      # functions called in f
+    smooths <- intersect(c("s", "te", "ti", "t2"), fns)
+    if (length(smooths)) {
+      if (!requireNamespace("mgcv", quietly = TRUE))
+        stop("`rate` uses mgcv smooth terms (", paste(smooths, collapse = ", "),
+             ") but mgcv is not installed; install it or use splines::ns()/bs() ",
+             "inside a plain formula")
+      rate_model <- mgcv::gam(f, data = glm_data, family = stats::poisson())
+    } else {
+      rate_model <- stats::glm(f, data = glm_data, family = stats::poisson())
+    }
     lambda <- unname(stats::fitted(rate_model)) / period
   } else {
-    stop('`rate` must be "interval" or a one-sided formula such as ~ dow + tod')
+    stop('`rate` must be a one-sided formula, a numeric vector of expected ',
+         'arrivals, or "interval"')
   }
+  data$arrivals <- arr; data$abandoned <- ab; data$agents <- ag; data$aht <- aht
 
   inf <- arr > 0                       # informative intervals for theta
   p_clamp <- function(p) pmin(pmax(p, 1e-12), 1 - 1e-12)
@@ -143,8 +221,14 @@ erlang_fit <- function(data, period = 1800, rate = "interval") {
 #' @export
 print.erlang_fit <- function(x, ...) {
   ci <- confint(x)
-  rate_lab <- if (inherits(x$rate, "formula"))
-    paste("Poisson GLM:", deparse(x$rate)) else "saturated (per-interval plug-in)"
+  rate_lab <- if (inherits(x$rate, "formula")) {
+    paste(if (inherits(x$rate_model, "gam")) "Poisson GAM:" else "Poisson GLM:",
+          paste(deparse(x$rate), collapse = " "))
+  } else if (is.numeric(x$rate)) {
+    "user-supplied expected arrivals"
+  } else {
+    "saturated (per-interval plug-in)"
+  }
   cat("Erlang-A model fit (M/M/n+M), interval maximum likelihood\n")
   cat(sprintf("  intervals      : %d informative (period %g s)\n", x$nobs, x$period))
   cat(sprintf("  arrival rate   : %.1f calls/hour on average [%s]\n",
