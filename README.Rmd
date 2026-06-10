@@ -1,0 +1,167 @@
+---
+output: github_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.path = "man/figures/README-", fig.width = 8, fig.height = 4.5,
+  dpi = 110, message = FALSE
+)
+set.seed(1)
+```
+
+# erlangR
+
+Erlang-A queueing models for staffing decisions, written for the generic
+statistical workflow: **fit, predict, plot** -- like `glm()`, not like a
+calculator.
+
+The model is M/M/n+M ("Erlang A"): Poisson arrivals at rate `lambda`,
+exponential service at rate `mu` per agent, and exponentially distributed
+caller *patience* with mean `1/theta` -- a caller still waiting when their
+patience runs out abandons. That is the whole model: **three parameters**,
+estimated from data, plus one decision variable `n_agents`. The headline
+quantity is `P(abandon | n_agents)`, which prices staffing decisions in lost
+calls rather than in service-level conventions. Occupancy caps, shrinkage,
+and SLA targets are deliberately *not* model inputs -- occupancy is an
+output, shrinkage is a scheduling translation (see `schedule_headcount()`),
+and SLAs are replaced by `expected_loss()`.
+
+Why this package exists: CRAN has no analytic Erlang-A implementation.
+[`queueing`](https://cran.r-project.org/package=queueing) covers classical
+M/M/c (no abandonment), simulation frameworks like `simmer` can renege but
+give no likelihood, and the small
+[`ErlangC`](https://cran.r-project.org/package=ErlangC) package has no
+patience model. None of them estimate parameters from data.
+
+## Capabilities
+
+* **Exact analytic measures** for Erlang A from the stationary birth--death
+  distribution, in log space (stable into thousands of agents):
+  `p_abandon()`, `p_wait()`, `mean_wait()`, `occupancy()`, plus classical
+  `erlang_b()` / `erlang_c()` as limiting cases. Defined for any load --
+  abandonment stabilises overloaded systems.
+* **Maximum-likelihood fitting** from ordinary interval data
+  (`erlang_fit()`): exponential MLE for service, profile binomial MLE for
+  patience, and a Poisson-GLM **arrival-rate model** (`rate = ~ dow + tod`)
+  rather than noisy per-interval plug-ins.
+* **Decision tools**: `predict()` gives the abandonment-vs-agents curve with
+  patience uncertainty propagated; `expected_loss()` converts it to money
+  and finds the cost-minimising staffing level.
+* **An exact event-based simulator** (`simulate_erlang_a()`) used to
+  validate the analytics in the test suite, generate the example data, and
+  power-analyse staffing experiments.
+* **Internal test suite** built on closed-form special cases (`theta = mu`
+  collapses to a Poisson law), conservation identities of the chain,
+  simulator agreement, and parameter recovery -- no external oracles.
+
+## The model in one chunk
+
+```{r measures}
+library(erlangR)
+
+# 120 calls/hour, 280 s mean handle, 100 s mean patience (rates per second)
+erlang_a(n_agents = 12, lambda = 120 / 3600, mu = 1 / 280, theta = 1 / 100)
+
+p_abandon(n_agents = 9:15, lambda = 120 / 3600, mu = 1 / 280, theta = 1 / 100)
+```
+
+## Fitting from half-hour data
+
+`callcenter` ships with the package: four weeks of half-hour intervals,
+simulated from a known ground truth (mean handle 280 s, mean patience 100 s)
+with staffing alternating week by week between a lean and a rich rule -- the
+"vary the agents every other week" experiment that real centres can run.
+
+```{r data}
+head(callcenter)
+```
+
+Fit the model. The arrival rate is *modelled* (Poisson GLM, multiplicative
+day-of-week and time-of-day effects) instead of plugging each interval's own
+noisy count back in:
+
+```{r fit}
+fit <- erlang_fit(callcenter, rate = ~ dow + tod)
+fit
+```
+
+The generating patience (100 s) is recovered inside the interval. The same
+data fitted with the saturated per-interval rate (`rate = "interval"`)
+returns a patience of ~165 s: noisy rate plug-ins meet a convex
+`p_abandon(lambda)` and bias the estimate -- the reason the rate model is a
+formula. See `?erlang_fit` for the mechanics.
+
+```{r calibration}
+plot(fit, type = "calibration")
+```
+
+```{r series, fig.height = 3.8}
+plot(fit, type = "series", days = 14)
+```
+
+The series view shows the experiment doing its work: lean weeks run visibly
+hotter than rich weeks, and the fitted curve tracks both.
+
+## The decision curve
+
+```{r decision}
+pred <- predict(fit, n_agents = 10:26, arrivals_per_hour = 170)  # busy-hour load
+plot(pred)
+```
+
+## From abandonment to money
+
+A service level target says "answer 80% in 20 seconds" and leaves the cost
+of doing so implicit. Pricing abandonment makes the trade explicit: lost
+revenue falls as staffing rises, payroll climbs, and somewhere the marginal
+agent stops paying for themselves.
+
+```{r loss}
+loss <- expected_loss(pred, value_per_call = 30, cost_per_agent_hour = 26)
+loss
+```
+
+```{r loss-plot}
+plot(loss)
+```
+
+The model's recommendation is a prediction, not a verdict -- the honest next
+step is exactly the experiment embedded in `callcenter`: alternate staffing
+levels on a schedule and compare realised abandonment with the predicted
+curve.
+
+## Scheduling helpers
+
+The model's `n_agents` is bodies answering, not bodies rostered. Those
+translations live outside the model on purpose:
+
+```{r helpers}
+agents_for_abandon(0.02, lambda = 170 / 3600, mu = 1 / 280, theta = 1 / 100)
+schedule_headcount(16, shrinkage = 0.3)
+```
+
+## Assumptions and roadmap
+
+Honest caveats: intervals are treated as independent steady-state systems
+(the standard SIPP approximation); patience is exponential; the patience SE
+treats arrival and service rates as plug-ins. On the roadmap, roughly in
+order: smooth/hierarchical arrival-rate models (`lambda(t)` via splines or
+GPs), non-exponential patience, transient (within-interval) dynamics,
+waiting-time distribution measures, and a vignette on designing and
+analysing staffing experiments.
+
+## Installation
+
+```r
+# install.packages("remotes")
+remotes::install_github("OWNER/erlangR")
+```
+
+## Development notes
+
+`dev/site-verification/` contains a separate, pre-package exercise:
+reverse-engineering and matching a popular online Erlang calculator
+cell-for-cell. It is kept for provenance and is not part of the package or
+its tests.
